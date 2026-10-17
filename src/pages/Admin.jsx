@@ -66,7 +66,16 @@ function Login() {
     setEnviando(true)
     const { error: err } = await supabase.auth.signInWithPassword({ email, password: clave })
     setEnviando(false)
-    if (err) setError('Email o contraseña incorrectos.')
+    if (err) {
+      const msg = (err.message || '').toLowerCase()
+      if (msg.includes('invalid login credentials')) {
+        setError('Email o contraseña incorrectos.')
+      } else if (msg.includes('not confirmed')) {
+        setError('Ese usuario no está confirmado. En Supabase: Authentication → Users → confirmá el usuario.')
+      } else {
+        setError('No se pudo ingresar. Detalle técnico: ' + (err.message || 'error desconocido'))
+      }
+    }
   }
 
   return (
