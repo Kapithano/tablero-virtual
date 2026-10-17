@@ -1,6 +1,6 @@
 # Tablero Virtual — Versión 1 (tablero en blanco)
 
-## Qué hace esta versión
+## Qué hace esta versión.
 
 - Un **tablero en blanco** donde **solo el administrador (director de juego) dibuja**.
 - Los jugadores entran con un **enlace** que les pasa el administrador y un **código de acceso**.
