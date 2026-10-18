@@ -304,6 +304,7 @@ label {
 
 /* ---------- el tablero ---------- */
 .board-frame {
+  position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
   background-color: #ffffff;
@@ -329,9 +330,162 @@ label {
   display: flex;
   flex-direction: column;
 }
-.player-screen .board-frame {
-  margin: 18px auto;
-  max-width: min(1400px, calc(100% - 36px), calc((100vh - 110px) * 16 / 9));
+
+/* ---------- avatar y tokens ---------- */
+.avatar-bg {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.avatar-edit {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.avatar-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px var(--border);
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.avatar-actions .btn {
+  margin-top: 0;
+}
+.file-btn {
+  display: inline-block;
+  font-size: 0.85rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.token-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* deja pasar el lápiz del director al lienzo */
+}
+.token {
+  position: absolute;
+  width: 5.2%;
+  aspect-ratio: 1;
+  min-width: 28px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.35), 0 3px 8px rgba(16, 24, 40, 0.3);
+  font-size: clamp(0.8rem, 1.6vw, 1.4rem);
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 1;
+}
+.token.movible {
+  cursor: grab;
+  touch-action: none;
+}
+.token.moviendo {
+  cursor: grabbing;
+  z-index: 3;
+  box-shadow: 0 0 0 2px var(--accent), 0 6px 14px rgba(16, 24, 40, 0.35);
+}
+.token.oculto {
+  opacity: 0.4;
+  border-style: dashed;
+}
+.token:hover {
+  z-index: 2;
+}
+/* nombre al pasar el cursor */
+.token::after {
+  content: attr(data-name);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  background: rgba(31, 41, 55, 0.92);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 8px;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.token:hover::after,
+.token.moviendo::after {
+  opacity: 1;
+}
+.token.tip-up::after {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.token.tip-left::after {
+  left: 0;
+  transform: none;
+}
+.token.tip-right::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* lista de jugadores del director */
+.player-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.player-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.player-item .avatar-bg {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 0.95rem;
+}
+.player-item .player-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.player-item .btn {
+  margin-top: 0;
+}
+.player-item.oculto .player-name {
+  color: var(--muted);
+  font-weight: 500;
+}
+.version {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 /* ---------- celulares y pantallas angostas ---------- */
@@ -343,10 +497,5 @@ label {
   }
   .sidebar {
     width: 100%;
-  }
-  .player-screen .board-frame {
-    margin: 12px;
-    max-width: none;
-    width: calc(100% - 24px);
   }
 }

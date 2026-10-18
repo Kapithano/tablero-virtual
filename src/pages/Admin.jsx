@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase, configFaltante } from '../lib/supabase.js'
 import { cargarTrazos, nombreCanal } from '../lib/drawing.js'
 import BoardCanvas from '../components/BoardCanvas.jsx'
+import TokenLayer from '../components/TokenLayer.jsx'
+import { upsertJugador, estiloAvatar, inicial } from '../lib/jugadores.js'
+import { APP_VERSION } from '../lib/version.js'
 
 const COLORES = ['#1f2937', '#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed']
 const GROSORES = [
@@ -114,6 +117,7 @@ function Login() {
 function Panel({ user }) {
   const [board, setBoard] = useState(null)
   const [trazos, setTrazos] = useState([])
+  const [jugadores, setJugadores] = useState([])
   const [tool, setTool] = useState({ color: COLORES[0], size: 6, eraser: false })
   const [aviso, setAviso] = useState('')
   const [copiado, setCopiado] = useState('')
@@ -143,9 +147,16 @@ function Panel({ user }) {
         }
 
         const t = await cargarTrazos(supabase, data.id)
+        const pj = await supabase
+          .from('players')
+          .select('id, name, avatar, x, y, visible')
+          .eq('board_id', data.id)
+          .order('created_at', { ascending: true })
+        if (pj.error) throw pj.error
         if (!cancelado) {
           setBoard(data)
           setTrazos(t)
+          setJugadores(pj.data || [])
         }
       } catch (e) {
         if (!cancelado) {
@@ -162,7 +173,17 @@ function Panel({ user }) {
   useEffect(() => {
     if (!board) return
     const canal = supabase.channel(nombreCanal(board.id, board.access_code))
-    canal.subscribe()
+    canal
+      // Un jugador creó o cambió su personaje, o movió/ocultó su token
+      .on('broadcast', { event: 'player' }, ({ payload }) => {
+        setJugadores((prev) => upsertJugador(prev, payload))
+      })
+      .on('broadcast', { event: 'move' }, ({ payload }) => {
+        setJugadores((prev) =>
+          prev.map((j) => (j.id === payload.id ? { ...j, x: payload.x, y: payload.y } : j))
+        )
+      })
+      .subscribe()
     canalRef.current = canal
     return () => {
       supabase.removeChannel(canal)
@@ -234,6 +255,38 @@ function Panel({ user }) {
     setBoard((b) => ({ ...b, access_code: nuevo }))
   }
 
+  // ---- tokens: el director puede mover, ocultar y mostrar el de cualquiera ----
+  const guardarToken = async (id, cambios) => {
+    const { error } = await supabase.from('players').update(cambios).eq('id', id).eq('board_id', board.id)
+    if (error) {
+      setAviso('No se pudo actualizar el token.')
+      return null
+    }
+    return true
+  }
+
+  const alMoverEnVivo = (id, x, y) => {
+    const j = jugadores.find((p) => p.id === id)
+    if (j?.visible) enviar('move', { id, x, y }) // oculto: no se avisa a los jugadores
+    setJugadores((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)))
+  }
+
+  const alSoltarToken = async (id, x, y) => {
+    const j = jugadores.find((p) => p.id === id)
+    if (!j) return
+    const nuevo = { ...j, x, y }
+    setJugadores((prev) => upsertJugador(prev, nuevo))
+    if (await guardarToken(id, { x, y }) && nuevo.visible) enviar('player', nuevo)
+  }
+
+  const alternarToken = async (j) => {
+    const nuevo = { ...j, visible: !j.visible }
+    if (!(await guardarToken(j.id, { visible: nuevo.visible }))) return
+    setJugadores((prev) => upsertJugador(prev, nuevo))
+    // Al ocultar, los demás solo reciben el id (no los datos del personaje)
+    enviar('player', nuevo.visible ? nuevo : { id: j.id, visible: false })
+  }
+
   const copiar = async (clave, texto) => {
     try {
       await navigator.clipboard.writeText(texto)
@@ -271,9 +324,12 @@ function Panel({ user }) {
     <div className="admin-layout">
       <header className="topbar">
         <strong>Tablero Virtual · Director</strong>
-        <button className="btn small-btn" onClick={cerrarSesion}>
-          Cerrar sesión
-        </button>
+        <div className="row gap">
+          <span className="version">v{APP_VERSION}</span>
+          <button className="btn small-btn" onClick={cerrarSesion}>
+            Cerrar sesión
+          </button>
+        </div>
       </header>
 
       <div className="admin-body">
@@ -314,6 +370,30 @@ function Panel({ user }) {
             <button className="btn full" onClick={renovarCodigo}>
               Renovar código
             </button>
+          </section>
+
+          <section className="panel-card">
+            <h2>Jugadores</h2>
+            {jugadores.length === 0 ? (
+              <p className="hint" style={{ marginTop: 0 }}>
+                Cuando un jugador cree su personaje, va a aparecer acá.
+              </p>
+            ) : (
+              <ul className="player-list">
+                {jugadores.map((j) => (
+                  <li key={j.id} className={`player-item ${j.visible ? '' : 'oculto'}`}>
+                    <div className="avatar-bg" style={estiloAvatar(j)}>
+                      {!j.avatar && inicial(j.name)}
+                    </div>
+                    <span className="player-name">{j.name}</span>
+                    <button className="btn small-btn" onClick={() => alternarToken(j)}>
+                      {j.visible ? 'Ocultar' : 'Mostrar'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="hint">Arrastrá cualquier token sobre el tablero para moverlo.</p>
           </section>
 
           <section className="panel-card">
@@ -372,7 +452,14 @@ function Panel({ user }) {
             tool={herramienta}
             onLive={alDibujarEnVivo}
             onCommit={alTerminarTrazo}
-          />
+          >
+            <TokenLayer
+              tokens={jugadores}
+              canMove={() => true}
+              onLive={alMoverEnVivo}
+              onCommit={alSoltarToken}
+            />
+          </BoardCanvas>
         </main>
       </div>
     </div>

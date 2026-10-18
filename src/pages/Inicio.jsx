@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { APP_VERSION } from '../lib/version.js'
 
 export default function Inicio() {
   return (
@@ -12,6 +13,7 @@ export default function Inicio() {
         <p className="small">
           <Link to="/admin">Soy el administrador</Link>
         </p>
+        <p className="version">Versión {APP_VERSION}</p>
       </div>
     </main>
   )

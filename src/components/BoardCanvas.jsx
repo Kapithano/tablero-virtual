@@ -9,8 +9,9 @@ import { BOARD_W, BOARD_H, RESOLUCION, redibujar } from '../lib/drawing.js'
  * - tool: { color, size, eraser }
  * - onLive(trazo): se llama mientras se dibuja (limitado en frecuencia)
  * - onCommit(trazo): se llama al soltar el lápiz
+ * - children: se dibuja encima del lienzo (por ejemplo, la capa de tokens)
  */
-export default function BoardCanvas({ strokes, live = [], canDraw = false, tool, onLive, onCommit }) {
+export default function BoardCanvas({ strokes, live = [], canDraw = false, tool, onLive, onCommit, children }) {
   const canvasRef = useRef(null)
   const actual = useRef(null)
   const ultimoEnvio = useRef(0)
@@ -77,6 +78,7 @@ export default function BoardCanvas({ strokes, live = [], canDraw = false, tool,
         onPointerUp={alSoltar}
         onPointerCancel={alSoltar}
       />
+      {children}
     </div>
   )
 }
