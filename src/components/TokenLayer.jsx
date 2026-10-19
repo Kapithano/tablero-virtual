@@ -4,7 +4,8 @@ import { estiloAvatar, inicial } from '../lib/jugadores.js'
 
 /**
  * Capa de tokens: va encima del lienzo, dentro del marco del tablero.
- * - tokens: [{ id, name, avatar, x, y, visible }] en coordenadas del tablero
+ * - tokens: [{ id, name, avatar, x, y, visible, dead }] en coordenadas del tablero
+ *   (dead = true dibuja una X roja encima del token)
  * - canMove(token): true si quien mira puede mover/arrastrar ese token
  * - onLive(id, x, y): mientras se arrastra (limitado en frecuencia)
  * - onCommit(id, x, y): al soltar el token
@@ -66,6 +67,7 @@ export default function TokenLayer({ tokens, canMove, onLive, onCommit }) {
           'token',
           canMove(t) ? 'movible' : '',
           t.visible ? '' : 'oculto',
+          t.dead ? 'muerto' : '',
           enArrastre ? 'moviendo' : '',
           y > BOARD_H * 0.8 ? 'tip-up' : '',
           x < 140 ? 'tip-left' : '',
@@ -90,6 +92,12 @@ export default function TokenLayer({ tokens, canMove, onLive, onCommit }) {
             onPointerCancel={alSoltar}
           >
             {!t.avatar && inicial(t.name)}
+            {t.dead && (
+              <svg className="token-x" viewBox="0 0 100 100" aria-hidden="true">
+                <path d="M18 18 L82 82 M82 18 L18 82" className="x-borde" />
+                <path d="M18 18 L82 82 M82 18 L18 82" className="x-roja" />
+              </svg>
+            )}
           </div>
         )
       })}
