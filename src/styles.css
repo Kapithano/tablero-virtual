@@ -488,6 +488,101 @@ label {
   font-size: 0.8rem;
 }
 
+/* ---------- 0.3.0: acciones de la lista, PNJ y tokens muertos ---------- */
+.topbar .pill {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+.player-item .player-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.item-actions .btn {
+  padding: 5px 9px;
+  font-size: 0.85rem;
+}
+.tag-pnj {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6d28d9;
+  background: #ede9fe;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.tag-pnj.en {
+  color: #166534;
+  background: #dcfce7;
+}
+.player-item.muerto .player-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+}
+
+/* sección PNJ, debajo del tablero */
+.npc-card {
+  margin-top: 14px;
+}
+.npc-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.npc-form .btn,
+.npc-form .file-btn {
+  margin: 0;
+}
+.npc-preview {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px var(--border);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.npc-name {
+  flex: 1;
+  min-width: 160px;
+  width: auto;
+}
+.npc-list {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px 18px;
+}
+
+/* X roja sobre los tokens muertos (va dentro del token, así lo sigue al moverlo) */
+.token-x {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.token-x path {
+  fill: none;
+  stroke-linecap: round;
+}
+.token-x .x-borde {
+  stroke: #fff;
+  stroke-width: 18;
+}
+.token-x .x-roja {
+  stroke: #dc2626;
+  stroke-width: 11;
+}
+
 /* ---------- celulares y pantallas angostas ---------- */
 @media (max-width: 860px) {
   .admin-body {
@@ -497,5 +592,11 @@ label {
   }
   .sidebar {
     width: 100%;
+  }
+  .topbar {
+    flex-wrap: wrap;
+  }
+  .npc-list {
+    grid-template-columns: 1fr;
   }
 }
