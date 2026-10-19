@@ -3,6 +3,7 @@ import { supabase, configFaltante } from '../lib/supabase.js'
 import { cargarTrazos, nombreCanal } from '../lib/drawing.js'
 import BoardCanvas from '../components/BoardCanvas.jsx'
 import TokenLayer from '../components/TokenLayer.jsx'
+import { procesarAvatar } from '../lib/avatar.js'
 import { upsertJugador, estiloAvatar, inicial } from '../lib/jugadores.js'
 import { APP_VERSION } from '../lib/version.js'
 
@@ -121,6 +122,9 @@ function Panel({ user }) {
   const [tool, setTool] = useState({ color: COLORES[0], size: 6, eraser: false })
   const [aviso, setAviso] = useState('')
   const [copiado, setCopiado] = useState('')
+  const [npcNombre, setNpcNombre] = useState('')
+  const [npcAvatar, setNpcAvatar] = useState(null)
+  const [creandoNpc, setCreandoNpc] = useState(false)
   const canalRef = useRef(null)
 
   // Cargar (o crear la primera vez) el tablero del administrador
@@ -149,7 +153,7 @@ function Panel({ user }) {
         const t = await cargarTrazos(supabase, data.id)
         const pj = await supabase
           .from('players')
-          .select('id, name, avatar, x, y, visible')
+          .select('id, name, avatar, x, y, visible, is_npc, dead')
           .eq('board_id', data.id)
           .order('created_at', { ascending: true })
         if (pj.error) throw pj.error
@@ -287,6 +291,86 @@ function Panel({ user }) {
     enviar('player', nuevo.visible ? nuevo : { id: j.id, visible: false })
   }
 
+  // Avisa a los jugadores del estado de un token. Si está fuera del tablero u oculto,
+  // solo reciben el id (para que lo quiten) y no los datos del personaje.
+  const avisarToken = (t) =>
+    enviar('player', t.visible ? t : { id: t.id, visible: false, dead: !!t.dead })
+
+  const alternarMuerto = async (j) => {
+    const nuevo = { ...j, dead: !j.dead }
+    if (!(await guardarToken(j.id, { dead: nuevo.dead }))) return
+    setJugadores((prev) => upsertJugador(prev, nuevo))
+    avisarToken(nuevo)
+  }
+
+  // ---- PNJ: personajes que solo maneja el director ----
+  const elegirAvatarNpc = async (e) => {
+    const archivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!archivo) return
+    try {
+      setNpcAvatar(await procesarAvatar(archivo))
+    } catch (err) {
+      setAviso(err.message || 'No se pudo usar esa imagen.')
+    }
+  }
+
+  const crearNpc = async (e) => {
+    e.preventDefault()
+    const nombre = npcNombre.trim()
+    if (!nombre) return
+    setCreandoNpc(true)
+    const fila = {
+      id: crypto.randomUUID(),
+      board_id: board.id,
+      secret_hash: '', // vacío: ningún jugador puede manejar este token
+      name: nombre.slice(0, 24),
+      avatar: npcAvatar || null,
+      is_npc: true,
+      visible: false, // nace en la lista PNJ; el director lo agrega al tablero cuando quiere
+    }
+    const { data, error } = await supabase
+      .from('players')
+      .insert(fila)
+      .select('id, name, avatar, x, y, visible, is_npc, dead')
+      .single()
+    setCreandoNpc(false)
+    if (error || !data) {
+      setAviso('No se pudo crear el PNJ. ¿Ejecutaste el SQL de la versión 0.3.0 en Supabase?')
+      return
+    }
+    setJugadores((prev) => [...prev, data])
+    setNpcNombre('')
+    setNpcAvatar(null)
+  }
+
+  // Agregar un PNJ al tablero o quitarlo (sigue guardado en la lista PNJ)
+  const alternarNpcEnTablero = async (j) => {
+    const entra = !j.visible
+    const cambios = { visible: entra }
+    if (entra) {
+      // Lo acomoda cerca del centro, sin apilarlo sobre los que ya están
+      const n = jugadores.filter((p) => p.is_npc && p.visible).length
+      cambios.x = 700 + (n % 8) * 50
+      cambios.y = 450 + (Math.floor(n / 8) % 4) * 50
+    }
+    if (!(await guardarToken(j.id, cambios))) return
+    const nuevo = { ...j, ...cambios }
+    setJugadores((prev) => upsertJugador(prev, nuevo))
+    avisarToken(nuevo)
+  }
+
+  const eliminarNpc = async (j) => {
+    if (!window.confirm(`¿Eliminar a "${j.name}" de la lista de PNJ? No se puede deshacer.`)) return
+    const { error } = await supabase.from('players').delete().eq('id', j.id).eq('board_id', board.id)
+    if (error) {
+      setAviso('No se pudo eliminar el PNJ.')
+      return
+    }
+    setJugadores((prev) => prev.filter((p) => p.id !== j.id))
+    if (j.visible) enviar('player', { id: j.id, visible: false })
+  }
+
   const copiar = async (clave, texto) => {
     try {
       await navigator.clipboard.writeText(texto)
@@ -320,11 +404,32 @@ function Panel({ user }) {
   const enlace = `${window.location.origin}/t/${board.id}`
   const herramienta = { ...tool, size: tool.eraser ? tool.size * 3 : tool.size }
 
+  // Los PNJ fuera del tablero no se dibujan ni aparecen en "Tokens Activos"
+  const enTablero = jugadores.filter((j) => !j.is_npc || j.visible)
+  const tokensActivos = [
+    ...enTablero.filter((j) => !j.is_npc),
+    ...enTablero.filter((j) => j.is_npc),
+  ]
+  const listaNpc = jugadores.filter((j) => j.is_npc)
+
   return (
     <div className="admin-layout">
       <header className="topbar">
         <strong>Tablero Virtual · Director</strong>
         <div className="row gap">
+          <span
+            className={`pill ${board.active ? 'on' : 'off'}`}
+            title={
+              board.active
+                ? 'Los jugadores con el enlace y el código pueden ver el tablero.'
+                : 'Los jugadores no pueden entrar. Vos podés dibujar igual.'
+            }
+          >
+            {board.active ? 'Activado' : 'Desactivado'}
+          </span>
+          <button className="btn small-btn" onClick={alternarActivo}>
+            {board.active ? 'Desactivar' : 'Activar'}
+          </button>
           <span className="version">v{APP_VERSION}</span>
           <button className="btn small-btn" onClick={cerrarSesion}>
             Cerrar sesión
@@ -334,67 +439,11 @@ function Panel({ user }) {
 
       <div className="admin-body">
         <aside className="sidebar">
-          <section className="panel-card">
-            <h2>Estado</h2>
-            <div className="row between">
-              <span className={`pill ${board.active ? 'on' : 'off'}`}>
-                {board.active ? 'Activado' : 'Desactivado'}
-              </span>
-              <button className="btn" onClick={alternarActivo}>
-                {board.active ? 'Desactivar' : 'Activar'}
-              </button>
-            </div>
-            <p className="hint">
-              {board.active
-                ? 'Los jugadores con el enlace y el código pueden ver el tablero.'
-                : 'Los jugadores no pueden entrar. Vos podés dibujar igual.'}
+          {aviso && (
+            <p className="error boxed" onClick={() => setAviso('')}>
+              {aviso} <span className="muted">(tocá para cerrar)</span>
             </p>
-          </section>
-
-          <section className="panel-card">
-            <h2>Acceso</h2>
-            <label>Enlace para los jugadores</label>
-            <div className="copy-row">
-              <input className="input" readOnly value={enlace} onFocus={(e) => e.target.select()} />
-              <button className="btn" onClick={() => copiar('enlace', enlace)}>
-                {copiado === 'enlace' ? '¡Copiado!' : 'Copiar'}
-              </button>
-            </div>
-            <label>Código de acceso</label>
-            <div className="copy-row">
-              <input className="input code-input" readOnly value={board.access_code} />
-              <button className="btn" onClick={() => copiar('codigo', board.access_code)}>
-                {copiado === 'codigo' ? '¡Copiado!' : 'Copiar'}
-              </button>
-            </div>
-            <button className="btn full" onClick={renovarCodigo}>
-              Renovar código
-            </button>
-          </section>
-
-          <section className="panel-card">
-            <h2>Jugadores</h2>
-            {jugadores.length === 0 ? (
-              <p className="hint" style={{ marginTop: 0 }}>
-                Cuando un jugador cree su personaje, va a aparecer acá.
-              </p>
-            ) : (
-              <ul className="player-list">
-                {jugadores.map((j) => (
-                  <li key={j.id} className={`player-item ${j.visible ? '' : 'oculto'}`}>
-                    <div className="avatar-bg" style={estiloAvatar(j)}>
-                      {!j.avatar && inicial(j.name)}
-                    </div>
-                    <span className="player-name">{j.name}</span>
-                    <button className="btn small-btn" onClick={() => alternarToken(j)}>
-                      {j.visible ? 'Ocultar' : 'Mostrar'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="hint">Arrastrá cualquier token sobre el tablero para moverlo.</p>
-          </section>
+          )}
 
           <section className="panel-card">
             <h2>Dibujo</h2>
@@ -438,11 +487,64 @@ function Panel({ user }) {
             </button>
           </section>
 
-          {aviso && (
-            <p className="error boxed" onClick={() => setAviso('')}>
-              {aviso} <span className="muted">(tocá para cerrar)</span>
-            </p>
-          )}
+          <section className="panel-card">
+            <h2>Tokens Activos</h2>
+            {tokensActivos.length === 0 ? (
+              <p className="hint" style={{ marginTop: 0 }}>
+                Cuando un jugador cree su personaje o agregues un PNJ al tablero, va a aparecer acá.
+              </p>
+            ) : (
+              <ul className="player-list">
+                {tokensActivos.map((j) => (
+                  <li key={j.id} className={`player-item ${j.visible ? '' : 'oculto'} ${j.dead ? 'muerto' : ''}`}>
+                    <div className="avatar-bg" style={estiloAvatar(j)}>
+                      {!j.avatar && inicial(j.name)}
+                    </div>
+                    <span className="player-name">
+                      {j.name}
+                      {j.is_npc && <span className="tag-pnj">PNJ</span>}
+                    </span>
+                    <div className="item-actions">
+                      {j.is_npc ? (
+                        <button className="btn small-btn" onClick={() => alternarNpcEnTablero(j)}>
+                          Quitar
+                        </button>
+                      ) : (
+                        <button className="btn small-btn" onClick={() => alternarToken(j)}>
+                          {j.visible ? 'Ocultar' : 'Mostrar'}
+                        </button>
+                      )}
+                      <button className="btn small-btn danger" onClick={() => alternarMuerto(j)}>
+                        {j.dead ? 'Revivir' : 'Muerto'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="hint">Arrastrá cualquier token sobre el tablero para moverlo.</p>
+          </section>
+
+          <section className="panel-card">
+            <h2>Acceso</h2>
+            <label>Enlace para los jugadores</label>
+            <div className="copy-row">
+              <input className="input" readOnly value={enlace} onFocus={(e) => e.target.select()} />
+              <button className="btn" onClick={() => copiar('enlace', enlace)}>
+                {copiado === 'enlace' ? '¡Copiado!' : 'Copiar'}
+              </button>
+            </div>
+            <label>Código de acceso</label>
+            <div className="copy-row">
+              <input className="input code-input" readOnly value={board.access_code} />
+              <button className="btn" onClick={() => copiar('codigo', board.access_code)}>
+                {copiado === 'codigo' ? '¡Copiado!' : 'Copiar'}
+              </button>
+            </div>
+            <button className="btn full" onClick={renovarCodigo}>
+              Renovar código
+            </button>
+          </section>
         </aside>
 
         <main className="stage">
@@ -454,12 +556,70 @@ function Panel({ user }) {
             onCommit={alTerminarTrazo}
           >
             <TokenLayer
-              tokens={jugadores}
+              tokens={enTablero}
               canMove={() => true}
               onLive={alMoverEnVivo}
               onCommit={alSoltarToken}
             />
           </BoardCanvas>
+
+          <section className="panel-card npc-card">
+            <h2>PNJ</h2>
+            <form className="npc-form" onSubmit={crearNpc}>
+              <div
+                className="avatar-bg npc-preview"
+                style={npcAvatar ? estiloAvatar({ avatar: npcAvatar }) : estiloAvatar({ id: 'nuevo-pnj' })}
+              >
+                {!npcAvatar && inicial(npcNombre)}
+              </div>
+              <input
+                className="input npc-name"
+                value={npcNombre}
+                onChange={(e) => setNpcNombre(e.target.value)}
+                maxLength={24}
+                placeholder="Nombre del PNJ"
+                autoComplete="off"
+              />
+              <label className="btn small-btn file-btn">
+                {npcAvatar ? 'Cambiar imagen' : 'Subir imagen'}
+                <input type="file" accept="image/*" onChange={elegirAvatarNpc} hidden />
+              </label>
+              {npcAvatar && (
+                <button type="button" className="btn small-btn" onClick={() => setNpcAvatar(null)}>
+                  Quitar imagen
+                </button>
+              )}
+              <button className="btn small-btn primary" type="submit" disabled={creandoNpc || !npcNombre.trim()}>
+                {creandoNpc ? 'Creando…' : 'Crear PNJ'}
+              </button>
+            </form>
+
+            {listaNpc.length === 0 ? (
+              <p className="hint">Todavía no creaste ningún PNJ. Solo vos podés ver y mover esta lista.</p>
+            ) : (
+              <ul className="player-list npc-list">
+                {listaNpc.map((j) => (
+                  <li key={j.id} className="player-item">
+                    <div className="avatar-bg" style={estiloAvatar(j)}>
+                      {!j.avatar && inicial(j.name)}
+                    </div>
+                    <span className="player-name">
+                      {j.name}
+                      <span className={`tag-pnj ${j.visible ? 'en' : ''}`}>{j.visible ? 'En el tablero' : 'Fuera'}</span>
+                    </span>
+                    <div className="item-actions">
+                      <button className="btn small-btn" onClick={() => alternarNpcEnTablero(j)}>
+                        {j.visible ? 'Quitar del tablero' : 'Agregar al tablero'}
+                      </button>
+                      <button className="btn small-btn danger" onClick={() => eliminarNpc(j)}>
+                        Eliminar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </main>
       </div>
     </div>
